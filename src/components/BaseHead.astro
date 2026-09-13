@@ -16,6 +16,8 @@ interface Props {
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 
 const { title, description, image = FallbackImage } = Astro.props;
+// Google AdSense Client ID configuration
+const adClientId = import.meta.env.PUBLIC_ADSENSE_CLIENT_ID || '';
 ---
 
 <!-- Global Metadata -->
@@ -50,3 +52,15 @@ const { title, description, image = FallbackImage } = Astro.props;
 
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image" />
+
+<!-- Google AdSense Auto Script (Loads when PUBLIC_ADSENSE_CLIENT_ID is configured) -->
+{
+	adClientId && (
+		<script
+			async
+			src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adClientId}`}
+			crossorigin="anonymous"
+		/>
+	)
+}
+
