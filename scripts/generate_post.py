@@ -5,16 +5,16 @@ Blog Content Pipeline (Python rewrite of the n8n workflow).
 Flow:
   1. Fetch Hacker News front-page stories (Algolia API, no auth needed).
   2. Pick one story at random.
-  3. Ask OpenAI to draft an original blog post inspired by that topic,
+  3. Ask Google Gemini to draft an original blog post inspired by that topic,
      returned as structured JSON (slug/title/description/body).
   4. Write it as an Astro content-collection markdown file matching
      src/content/config.ts's schema (title, description, pubDate, ...).
 
 Env vars required:
-  OPENAI_API_KEY   - OpenAI API key (repo secret in GitHub Actions)
+  GEMINI_API_KEY   - Google Gemini API key (repo secret in GitHub Actions)
 
 Optional env vars:
-  OPENAI_MODEL     - defaults to "gpt-4o-mini"
+  GEMINI_MODEL     - defaults to "gemini-2.5-flash"
   CONTENT_DIR      - defaults to "src/content/blog"
   HN_POOL_SIZE     - how many front-page stories to sample from (default 30)
 """
@@ -28,9 +28,8 @@ import urllib.request
 from datetime import date
 
 HN_FRONT_PAGE_URL = "https://hn.algolia.com/api/v1/search?tags=front_page"
-OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 CONTENT_DIR = os.environ.get("CONTENT_DIR", "src/content/blog")
 HN_POOL_SIZE = int(os.environ.get("HN_POOL_SIZE", "30"))
 
@@ -73,8 +72,14 @@ def slugify(text):
 
 
 def draft_post(topic):
-    if not os.environ.get("OPENAI_API_KEY"):
-        raise RuntimeError("OPENAI_API_KEY is not set")
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY is not set")
+
+    gemini_url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{GEMINI_MODEL}:generateContent?key={api_key}"
+    )
 
     system_prompt = (
         "You are a technical blogger writing original, engaging posts for a "
@@ -95,22 +100,33 @@ def draft_post(topic):
     )
 
     payload = {
-        "model": OPENAI_MODEL,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
+        "systemInstruction": {
+            "parts": [{"text": system_prompt}]
+        },
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": user_prompt}]
+            }
         ],
-        "temperature": 0.8,
-        "response_format": {"type": "json_object"},
-    }
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}",
+        "generationConfig": {
+            "temperature": 0.8,
+            "responseMimeType": "application/json"
+        }
     }
 
-    result = http_json(OPENAI_URL, data=payload, headers=headers, method="POST")
-    content = result["choices"][0]["message"]["content"]
-    post = json.loads(content)
+    headers = {
+        "Content-Type": "application/json"
+    }
+
+    result = http_json(gemini_url, data=payload, headers=headers, method="POST")
+    
+    # Extract the response text from Gemini's payload format
+    try:
+        content = result["candidates"][0]["content"]["parts"][0]["text"]
+        post = json.loads(content)
+    except (KeyError, IndexError, json.JSONDecodeError) as e:
+        raise RuntimeError(f"Failed to parse response from Gemini API: {e}")
 
     for key in ("slug", "title", "description", "body"):
         if not post.get(key):
