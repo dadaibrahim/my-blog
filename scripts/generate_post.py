@@ -39,8 +39,17 @@ def http_json(url, data=None, headers=None, method=None):
     headers = headers or {}
     body = json.dumps(data).encode("utf-8") if data is not None else None
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            error_body = e.read().decode("utf-8")
+        except Exception:
+            error_body = "<no response body>"
+        raise RuntimeError(
+            f"HTTP {e.code} from {url}\nResponse body: {error_body}"
+        ) from None
 
 
 def fetch_hn_topic():
