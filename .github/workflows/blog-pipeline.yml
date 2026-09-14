@@ -1,0 +1,36 @@
+name: Blog Content Pipeline
+
+on:
+  schedule:
+    # 09:00 Asia/Kolkata (IST = UTC+5:30) on Mondays and Thursdays
+    - cron: "30 3 * * 1,4"
+  workflow_dispatch: {}   # lets you trigger a run manually from the Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  generate-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate post
+        id: generate
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python scripts/generate_post.py
+
+      - name: Commit and push new post
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Add auto-generated blog post"
+          commit_user_name: "blog-bot"
+          commit_user_email: "actions@users.noreply.github.com"
